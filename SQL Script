@@ -1,0 +1,270 @@
+DDROP TABLE IF EXISTS nw_5 ;
+
+CREATE TABLE IF NOT EXISTS nw_5 AS
+SELECT  A.*
+        ,uv
+        ,a2c
+        ,Buyer
+        ,gmv
+        ,Orders
+        ,Item
+FROM    (
+            SELECT  Months
+                    ,venture_category1_name_en
+                    ,venture_category2_name_en
+                    ,venture_category3_name_en
+                    ,CASE    WHEN Price BETWEEN 0 AND 250 THEN "0 AND 250"
+                             WHEN Price BETWEEN 251 AND 500 THEN "251 AND 500"
+                             WHEN Price BETWEEN 501 AND 750 THEN "501 AND 750"
+                             WHEN Price BETWEEN 751 AND 1000 THEN "751 AND 1000"
+                             WHEN Price BETWEEN 1001 AND 1250 THEN "1001 AND 1250"
+                             WHEN Price BETWEEN 1251 AND 1500 THEN "1251 AND 1500"
+                             WHEN Price BETWEEN 1501 AND 1750 THEN "1501 AND 1750"
+                             WHEN Price BETWEEN 1751 AND 2000 THEN "1751 AND 2000"
+                             WHEN Price BETWEEN 2001 AND 2250 THEN "2001 AND 2250"
+                             WHEN Price BETWEEN 2251 AND 2500 THEN "2251 AND 2500"
+                             WHEN Price BETWEEN 2501 AND 2750 THEN "2501 AND 2750"
+                             WHEN Price BETWEEN 2751 AND 3000 THEN "2751 AND 3000"
+                             WHEN Price > 3000 THEN "3000+" 
+                     END AS Price_Buckets
+                    ,COUNT(
+                        DISTINCT CASE    when (sum_is_visible > 0) THEN A.product_id 
+                                 END
+                    ) AS Live_Assortment
+                    ,COUNT(
+                        DISTINCT CASE    when (sum_is_visible > 0) AND (live_days > 0) THEN A.product_id 
+                                 END
+                    ) AS ATP_Assortment
+                    ,COUNT(
+                        DISTINCT CASE    when (sum_is_visible > 0) THEN A.product_id 
+                                 END
+                    ) - COUNT(DISTINCT CASE WHEN (sum_is_visible > 0) AND (live_days > 0) THEN A.product_id END) AS OOS_Assortment
+                    ,COUNT(
+                        DISTINCT CASE    when (impression_count > 0) AND (sum_is_visible > 0) THEN A.product_id 
+                                 END
+                    ) AS Products_impressed
+                    ,COUNT(
+                        DISTINCT CASE    when (sum_pv > 0) AND (sum_is_visible > 0) THEN A.product_id 
+                                 END
+                    ) AS Products_viewed
+                    ,COUNT(
+                        DISTINCT CASE    when (count_add_to_cart > 0) THEN A.product_id 
+                                 END
+                    ) AS Products_atc
+                    ,COUNT(
+                        DISTINCT CASE    when (sum_is_visible > 0 AND items_sold > 0) THEN A.product_id 
+                                 END
+                    ) AS Selling_Assortment
+            FROM    (
+                        SELECT  DISTINCT MONTHS
+                                ,product_id
+                                ,sum_is_visible
+                                ,live_days
+                                ,items_sold
+                                ,impression_count
+                                ,sum_pv
+                                ,count_add_to_cart
+                        FROM    daraz_ads.ads_drz_prd_assortment_battle_1m
+                        WHERE   substr(ds,1,6) = 202308
+                        AND     venture = 'PK'
+                    ) AS A INNER
+            JOIN    (
+                        SELECT  product_id
+                                ,venture_category1_name_en
+                                ,venture_category2_name_en
+                                ,venture_category3_name_en
+                                ,round(AVG(current_price),0) AS Price
+                        FROM    daraz_cdm.dim_drz_prd_sku_core AS prd
+                        WHERE   ds = MAX_PT("daraz_cdm.dim_drz_prd_sku_core")
+                        AND     venture = 'PK'
+                        AND     venture_category1_name_en IN ('Media, Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games')
+                        GROUP BY product_id
+                                 ,venture_category1_name_en
+                                 ,venture_category2_name_en
+                                 ,venture_category3_name_en
+                                 ,Price
+                    ) AS b
+            ON      A.product_id = b.product_id
+            GROUP BY Months
+                     ,venture_category1_name_en
+                     ,venture_category2_name_en
+                     ,venture_category3_name_en
+                     ,Price_Buckets
+        ) AS A
+LEFT JOIN (
+              SELECT  CC.*
+                      ,a2c
+                      ,Buyer
+                      ,gmv
+                      ,Orders
+                      ,Item
+              FROM    (
+                          SELECT  TO_CHAR(fulfillment_create_date,'yyyymm') AS Months
+                                  ,venture_category1_name_en
+                                  ,venture_category2_name_en
+                                ,venture_category3_name_en
+                    ,CASE    WHEN round(unit_Price,0) BETWEEN 0 AND 250 THEN "0 AND 250"
+                             WHEN round(unit_Price,0) BETWEEN 251 AND 500 THEN "251 AND 500"
+                             WHEN round(unit_Price,0) BETWEEN 501 AND 750 THEN "501 AND 750"
+                             WHEN round(unit_Price,0) BETWEEN 751 AND 1000 THEN "751 AND 1000"
+                             WHEN round(unit_Price,0) BETWEEN 1001 AND 1250 THEN "1001 AND 1250"
+                             WHEN round(unit_Price,0) BETWEEN 1251 AND 1500 THEN "1251 AND 1500"
+                             WHEN round(unit_Price,0) BETWEEN 1501 AND 1750 THEN "1501 AND 1750"
+                             WHEN round(unit_Price,0) BETWEEN 1751 AND 2000 THEN "1751 AND 2000"
+                             WHEN round(unit_Price,0) BETWEEN 2001 AND 2250 THEN "2001 AND 2250"
+                             WHEN round(unit_Price,0) BETWEEN 2251 AND 2500 THEN "2251 AND 2500"
+                             WHEN round(unit_Price,0) BETWEEN 2501 AND 2750 THEN "2501 AND 2750"
+                             WHEN round(unit_Price,0) BETWEEN 2751 AND 3000 THEN "2751 AND 3000"
+                             WHEN round(unit_Price,0) > 3000 THEN "3000+"
+                                   END AS Price_Buckets
+                                  ,SUM(actual_gmv * EXCHANGE_rate) AS GMV
+                                  ,COUNT(DISTINCT buyer_id) AS Buyer
+                                  ,COUNT(DISTINCT sales_order_id) AS Orders
+                                  ,COUNT(DISTINCT sales_order_item_id) AS Item
+                          FROM    daraz_cdm.dwd_drz_trd_core_df
+                          WHERE   ds = MAX_PT('daraz_cdm.dwd_drz_trd_core_df')
+                          AND     venture_category1_name_en IN ('Media, Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games')
+                          AND     venture = 'PK'
+                          AND     is_fulfilled = 1
+                          AND     unit_price > 1
+                          AND     TO_CHAR(fulfillment_create_date,'yyyymm') in (202308)
+                          GROUP BY TO_CHAR(fulfillment_create_date,'yyyymm')
+                                   ,venture_category1_name_en
+                                   ,venture_category2_name_en
+                                ,venture_category3_name_en
+                                ,Price_Buckets
+                      ) AS AA
+              RIGHT JOIN (
+                             SELECT  venture_category1_name_en
+                             ,venture_category2_name_en
+                                ,venture_category3_name_en
+                                     ,Price_Buckets
+                                     ,SUBSTR(ds,1,6) AS Months
+                                     ,COUNT(DISTINCT visitor_id) AS UV
+                             FROM    (
+                                         SELECT  daraz_sku
+                                                 ,venture_category1_name_en
+                                                 ,venture_category2_name_en
+                                ,venture_category3_name_en
+                                ,CASE    WHEN Price BETWEEN 0 AND 250 THEN "0 AND 250"
+                             WHEN Price BETWEEN 251 AND 500 THEN "251 AND 500"
+                             WHEN Price BETWEEN 501 AND 750 THEN "501 AND 750"
+                             WHEN Price BETWEEN 751 AND 1000 THEN "751 AND 1000"
+                             WHEN Price BETWEEN 1001 AND 1250 THEN "1001 AND 1250"
+                             WHEN Price BETWEEN 1251 AND 1500 THEN "1251 AND 1500"
+                             WHEN Price BETWEEN 1501 AND 1750 THEN "1501 AND 1750"
+                             WHEN Price BETWEEN 1751 AND 2000 THEN "1751 AND 2000"
+                             WHEN Price BETWEEN 2001 AND 2250 THEN "2001 AND 2250"
+                             WHEN Price BETWEEN 2251 AND 2500 THEN "2251 AND 2500"
+                             WHEN Price BETWEEN 2501 AND 2750 THEN "2501 AND 2750"
+                             WHEN Price BETWEEN 2751 AND 3000 THEN "2751 AND 3000"
+                             WHEN Price > 3000 THEN "3000+" 
+                     END AS Price_Buckets
+                                         FROM    (
+                                                     SELECT  daraz_sku
+                                                             ,venture_category1_name_en
+                                                             ,venture_category2_name_en
+                                                             ,venture_category3_name_en
+                                                             ,round(AVG(current_price),0) AS Price
+                                                             ,product_weight AS Catalogue_Item_Weight
+                                                     FROM    daraz_cdm.dim_drz_prd_sku_core
+                                                     WHERE   ds = MAX_PT('daraz_cdm.dim_drz_prd_sku_core')
+                                                     AND     venture_category1_name_en IN ('Media, Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games')
+                                                     AND     venture = 'PK'    --    AND     venture_category1_name_en IN ('Sports & Outdoors')
+                                                     GROUP BY daraz_sku
+                                                             ,venture_category1_name_en
+                                                             ,venture_category2_name_en
+                                                             ,venture_category3_name_en
+                                                             ,Catalogue_Item_Weight
+                                                 ) 
+                                     ) AS A1 INNER
+                             JOIN    (
+                                         SELECT  DISTINCT ds
+                                                 ,daraz_sku
+                                                 ,visitor_id
+                                         FROM    daraz_cdm.dws_drz_log_sku_visitor_1d
+                                         WHERE   venture = 'PK'
+                                         AND     SUBSTR(ds,1,6) in (202308)
+                                     ) AS B1
+                             ON      A1.daraz_sku = B1.daraz_sku
+                             GROUP BY venture_category1_name_en
+                                      ,venture_category2_name_en
+                                      ,venture_category3_name_en
+                                      ,Price_Buckets
+                                      ,SUBSTR(ds,1,6)
+                         ) AS CC
+              ON      AA.venture_category1_name_en = CC.venture_category1_name_en
+              AND       AA.venture_category2_name_en = CC.venture_category2_name_en
+              AND       AA.venture_category3_name_en = CC.venture_category3_name_en
+              AND     AA.Months = CC.Months
+              AND     AA.Price_Buckets = CC.Price_Buckets
+              LEFT JOIN (
+                            SELECT  SUBSTR(ds,1,6) AS MOnths
+                                    ,venture_category1_name_en
+                                    ,venture_category2_name_en
+                                    ,venture_category3_name_en
+                                    ,Price_Buckets
+                                    ,COUNT(DISTINCT user_id) AS A2C
+                            FROM    (
+                                        SELECT  daraz_sku
+                                                ,venture_category1_name_en
+                                                ,venture_category2_name_en
+                                                ,venture_category3_name_en
+                                                ,CASE    WHEN Price BETWEEN 0 AND 250 THEN "0 AND 250"
+                             WHEN Price BETWEEN 251 AND 500 THEN "251 AND 500"
+                             WHEN Price BETWEEN 501 AND 750 THEN "501 AND 750"
+                             WHEN Price BETWEEN 751 AND 1000 THEN "751 AND 1000"
+                             WHEN Price BETWEEN 1001 AND 1250 THEN "1001 AND 1250"
+                             WHEN Price BETWEEN 1251 AND 1500 THEN "1251 AND 1500"
+                             WHEN Price BETWEEN 1501 AND 1750 THEN "1501 AND 1750"
+                             WHEN Price BETWEEN 1751 AND 2000 THEN "1751 AND 2000"
+                             WHEN Price BETWEEN 2001 AND 2250 THEN "2001 AND 2250"
+                             WHEN Price BETWEEN 2251 AND 2500 THEN "2251 AND 2500"
+                             WHEN Price BETWEEN 2501 AND 2750 THEN "2501 AND 2750"
+                             WHEN Price BETWEEN 2751 AND 3000 THEN "2751 AND 3000"
+                             WHEN Price > 3000 THEN "3000+" 
+                     END AS Price_Buckets
+                                        FROM    (
+                                                    SELECT  daraz_sku
+                                                            ,venture_category1_name_en
+                                                            ,venture_category2_name_en
+                                                            ,venture_category3_name_en
+                                                            ,round(AVG(current_price),0) AS Price
+                                                            ,product_weight AS Catalogue_Item_Weight
+                                                    FROM    daraz_cdm.dim_drz_prd_sku_core
+                                                    WHERE   ds = MAX_PT('daraz_cdm.dim_drz_prd_sku_core')
+                                                    AND     venture_category1_name_en IN ('Media, Music & Books','Sports & Outdoors','Stationery & Craft','Toys & Games')
+                                                    AND     venture = 'PK'
+                                                    GROUP BY daraz_sku
+                                                             ,venture_category1_name_en
+                                                             ,venture_category2_name_en
+                                                             ,venture_category3_name_en
+                                                             ,Catalogue_Item_Weight
+                                                ) 
+                                    ) AS A1 INNER
+                            JOIN    (
+                                        SELECT  DISTINCT ds
+                                                ,daraz_sku
+                                                ,user_id
+                                        FROM    daraz_cdm.dwd_drz_trd_cart_ent_di
+                                        WHERE   venture = 'PK'
+                                        AND     SUBSTR(ds,1,6) in (202308)
+                                    ) AS B1
+                            ON      A1.daraz_sku = B1.daraz_sku
+                            GROUP BY SUBSTR(ds,1,6)
+                                     ,venture_category1_name_en
+                                     ,venture_category2_name_en
+                                     ,venture_category3_name_en
+                                     ,Price_Buckets
+                        ) AS DD
+              ON      cc.venture_category1_name_en = DD.venture_category1_name_en
+              AND       cc.venture_category2_name_en = DD.venture_category2_name_en
+              AND      cc.venture_category3_name_en = DD.venture_category3_name_en
+              AND     cc.Months = DD.months
+              AND     cc.Price_Buckets = DD.Price_Buckets
+          ) AS B
+ON      A.venture_category1_name_en = B.venture_category1_name_en
+AND     A.venture_category2_name_en = B.venture_category2_name_en
+AND     A.venture_category3_name_en = B.venture_category3_name_en
+AND     A.Months = B.Months
+AND     A.Price_Buckets = B.Price_Buckets;
